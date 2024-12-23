@@ -2,6 +2,7 @@ import streamlit as st
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 import pandas as pd
+import re
 
 m = st.markdown("""
 <style>
@@ -37,23 +38,30 @@ def admin_tab():
             doctor_specialty = st.selectbox("Выберите специальность врача", specialties)
             
             if st.button("Добавить врача"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' CALL add_doctor(:surname, :name, :patronymic, :specialization);'''
-                        connection.execute(text(sql_call_procedure), {
-                            "surname": doctor_surname,
-                            "name": doctor_name,
-                            "patronymic": doctor_patronymic,
-                            "specialization": doctor_specialty
-                        })
-                        connection.commit()
-                    st.success(f"Врач {doctor_name} {doctor_surname} {doctor_patronymic} добавлен!")
-                
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при добавлении врача: " + str(error))
+                if not doctor_name or not doctor_surname or not doctor_patronymic or not doctor_specialty:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_patronymic):
+                    st.warning("Поля должны содержать только буквы русского или английского алфавита")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' CALL add_doctor(:surname, :name, :patronymic, :specialization);'''
+                            connection.execute(text(sql_call_procedure), {
+                                "surname": doctor_surname,
+                                "name": doctor_name,
+                                "patronymic": doctor_patronymic,
+                                "specialization": doctor_specialty
+                            })
+                            connection.commit()
+                        st.success(f"Врач {doctor_name} {doctor_surname} {doctor_patronymic} добавлен!")
+                    
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                        elif "повторяющееся значение ключа нарушает ограничение уникальности" in str(error):
+                            st.warning("Врач с такими данными уже существует в поликлинике")
+                        else:
+                            st.error("Ошибка при добавлении врача: " + str(error))
 
         elif tab == "Изменить данные врача":
             st.subheader("Изменение данных у врача")
@@ -65,24 +73,31 @@ def admin_tab():
                 doctor_name = st.text_input("Введите новое имя врача")
                 doctor_patronymic = st.text_input("Введите новое отчество врача")
                 if st.button("Внести изменения"):
-                    try:
-                        with st.session_state.engine.connect() as connection:
-                            sql_call_procedure = ''' CALL update_doctor_fio(:id_doctor, :surname, :name, :patronymic);'''
-                            connection.execute(text(sql_call_procedure), {
-                                "id_doctor": doctor_id,
-                                "surname": doctor_surname,
-                                "name": doctor_name,
-                                "patronymic": doctor_patronymic
-                            })
-                            connection.commit()
-                        st.success(f"Изменения внесены!")
-                    except SQLAlchemyError as error:
-                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                        elif "не существует в базе" in str(error):
-                            st.warning(f"Врач с ID {doctor_id} не найден!")
-                        else:
-                            st.error("Ошибка при изменении врача: " + str(error))
+                    if not doctor_name or not doctor_surname or not doctor_patronymic:
+                        st.warning("Заполните все поля!")
+                    elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_patronymic):
+                        st.warning("Поля должны содержать только буквы русского или английского алфавита")
+                    else:
+                        try:
+                            with st.session_state.engine.connect() as connection:
+                                sql_call_procedure = ''' CALL update_doctor_fio(:id_doctor, :surname, :name, :patronymic);'''
+                                connection.execute(text(sql_call_procedure), {
+                                    "id_doctor": doctor_id,
+                                    "surname": doctor_surname,
+                                    "name": doctor_name,
+                                    "patronymic": doctor_patronymic
+                                })
+                                connection.commit()
+                            st.success(f"Изменения внесены!")
+                        except SQLAlchemyError as error:
+                            if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                                st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                            elif "Врач не найден" in str(error):
+                                st.warning(f"Врач с ID {doctor_id} не найден!")
+                            elif "повторяющееся значение ключа нарушает ограничение уникальности" in str(error):
+                                st.warning("Врач с такими данными уже существует в поликлинике")
+                            else:
+                                st.error("Ошибка при изменении врача: " + str(error))
             
             elif action == "Изменить специальность":
                 doctor_id = st.number_input("Введите ID врача для изменения", min_value=1)
@@ -100,8 +115,10 @@ def admin_tab():
                     except SQLAlchemyError as error:
                         if "Процедура с данными именем и типами аргументов не найдена" in str(error):
                             st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                        elif "не существует в базе" in str(error):
+                        elif "Врач не найден" in str(error):
                             st.warning(f"Врач с ID {doctor_id} не найден!")
+                        elif "повторяющееся значение ключа нарушает ограничение уникальности" in str(error):
+                            st.warning("Врач с такими данными уже существует в поликлинике")
                         else:
                             st.error("Ошибка при изменении врача: " + str(error))
         
@@ -118,7 +135,7 @@ def admin_tab():
                             st.write("Врачи не найдены.")
                         connection.commit()
                 except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                    if "Функция с данными именем и типами аргументов не найдена" in str(error):
                             st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                     else:
                         st.error("Ошибка при получении списка врачей: " + str(error))
@@ -136,7 +153,7 @@ def admin_tab():
                             st.write("Врачи не найдены.")
                         connection.commit()
                 except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                    if "Функция с данными именем и типами аргументов не найдена" in str(error):
                             st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                     else:
                         st.error("Ошибка при получении списка врачей: " + str(error))
@@ -169,24 +186,29 @@ def admin_tab():
                 doctor_patronymic = st.text_input("Отчество врача")
                 doctor_specialty = st.selectbox("Специальность врача", specialties)
                 if st.button("Удалить"):
-                    try:
-                        with st.session_state.engine.connect() as connection:
-                            sql_call_procedure = ''' CALL delete_doctor(:surname, :name, :patronymic, :specialization);'''
-                            connection.execute(text(sql_call_procedure), {
-                                "surname": doctor_surname,
-                                "name": doctor_name,
-                                "patronymic": doctor_patronymic,
-                                "specialization": doctor_specialty
-                            })
-                            connection.commit()
-                        st.success(f"{doctor_specialty} {doctor_surname} {doctor_name} {doctor_patronymic} удален!")
-                    except SQLAlchemyError as error:
-                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                        elif "не существует в базе" in str(error):
-                            st.warning(f"Врач {doctor_specialty} {doctor_surname} {doctor_name} {doctor_patronymic} не найден!")
-                        else:
-                            st.error("Ошибка при удалении врача: " + str(error))
+                    if not doctor_name or not doctor_surname or not doctor_patronymic:
+                        st.warning("Заполните все поля!")
+                    elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_patronymic):
+                        st.warning("Поля должны содержать только буквы русского или английского алфавита")
+                    else:
+                        try:
+                            with st.session_state.engine.connect() as connection:
+                                sql_call_procedure = ''' CALL delete_doctor(:surname, :name, :patronymic, :specialization);'''
+                                connection.execute(text(sql_call_procedure), {
+                                    "surname": doctor_surname,
+                                    "name": doctor_name,
+                                    "patronymic": doctor_patronymic,
+                                    "specialization": doctor_specialty
+                                })
+                                connection.commit()
+                            st.success(f"{doctor_specialty} {doctor_surname} {doctor_name} {doctor_patronymic} удален!")
+                        except SQLAlchemyError as error:
+                            if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                                st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                            elif "не существует в базе" in str(error):
+                                st.warning(f"Врач {doctor_specialty} {doctor_surname} {doctor_name} {doctor_patronymic} не найден!")
+                            else:
+                                st.error("Ошибка при удалении врача: " + str(error))
             
             elif action == "Удалить врачей по специальности":
                 doctor_specialty = st.selectbox("Специальность врача", specialties)
@@ -279,7 +301,7 @@ def registrar_tab():
             st.session_state.engine = None
     
     specialties = ['Терапевт', 'Гастроэнтеролог', 'Офтальмолог', 'Окулист', 'Невролог', 'Отоларинголог', 'Хирург', 'Психиатр']
-    tab = st.sidebar.radio("Выберите действие", ["Просмотр графика записей", "Просмотр врачей", "Добавить пациента", "Добавление записи", "Изменение записи", "Удаление записи", "Поиск пациента", "Изменение данных у пациента"])
+    tab = st.sidebar.radio("Выберите действие", ["Просмотр графика записей", "Просмотр врачей", "Добавление пациента", "Добавление записи", "Изменение записи", "Удаление записи", "Поиск пациента", "Изменение данных у пациента"])
 
     if tab == "Просмотр графика записей":
         st.subheader("Просмотр графика записей")
@@ -306,26 +328,32 @@ def registrar_tab():
             doctor_name = st.text_input("Введите имя врача")
             doctor_surname = st.text_input("Введите фамилию врача")
             doctor_patronymic = st.text_input("Введите отчество врача")
+            
             if st.button("Поиск"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' SELECT * FROM get_schedule(:surname, :name, :patronymic);'''
-                        result = connection.execute(text(sql_call_procedure), {
-                            "surname": doctor_surname,
-                            "name": doctor_name,
-                            "patronymic": doctor_patronymic,
-                        })
-                        appointment_table = pd.DataFrame(result.fetchall(), columns=result.keys())
-                        if not appointment_table.empty:
-                            st.dataframe(appointment_table)
+                if not doctor_name or not doctor_surname or not doctor_patronymic:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_patronymic):
+                    st.warning("Поля должны содержать только буквы русского или английского алфавита")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' SELECT * FROM get_schedule(:surname, :name, :patronymic);'''
+                            result = connection.execute(text(sql_call_procedure), {
+                                "surname": doctor_surname,
+                                "name": doctor_name,
+                                "patronymic": doctor_patronymic,
+                            })
+                            appointment_table = pd.DataFrame(result.fetchall(), columns=result.keys())
+                            if not appointment_table.empty:
+                                st.dataframe(appointment_table)
+                            else:
+                                st.write("Записей нет.")
+                            connection.commit()
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                         else:
-                            st.write("Записей нет.")
-                        connection.commit()
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при получении графика записей: " + str(error))
+                            st.error("Ошибка при получении графика записей: " + str(error))
         
         elif action == "Расписание по специальности":
             doctor_specialty = st.selectbox("Выберите специальность врача", specialties)
@@ -366,7 +394,7 @@ def registrar_tab():
                 else:
                     st.error("Ошибка при получении списка врачей: " + str(error))
     
-    elif tab == "Добавить пациента":
+    elif tab == "Добавление пациента":
         st.subheader("Добавление пациента")
         pat_snils = st.text_input("Введите СНИЛС пациента (123-456-789 01)")
         pat_name = st.text_input("Введите имя пациента")
@@ -375,25 +403,36 @@ def registrar_tab():
         pat_birth = st.date_input("Введите дату рождения пациента (дд-мм-гггг)")
         pat_address = st.text_input("Введите адрес пациента")
         if st.button("Добавить пациента"):
-            try:
-                with st.session_state.engine.connect() as connection:
-                    sql_call_procedure = ''' CALL add_patient(:snils, :surname, :name, :patronymic, :birthdate, :address);'''
-                    connection.execute(text(sql_call_procedure), {
-                        "snils": pat_snils,
-                        "surname": pat_surname,
-                        "name": pat_name,
-                        "patronymic": pat_patronymic,
-                        "birthdate": pat_birth,
-                        "address": pat_address
-                    })
-                    connection.commit()
-                st.success(f"Пациент {pat_surname} {pat_name} {pat_patronymic} добавлен!")
-            
-            except SQLAlchemyError as error:
-                if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                    st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                else:
-                    st.error("Ошибка при добавлении пациента: " + str(error))
+            if not pat_snils or not pat_name or not pat_surname or not pat_patronymic or not pat_birth or not pat_address:
+                st.warning("Заполните все поля!")
+            elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', pat_snils):
+                st.warning("Неверный формат СНИЛС")
+            elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_patronymic):
+                st.warning("Поля ФИО пациента должны содержать только буквы русского или английского алфавита")
+            elif not re.match(r'^(?=.*[a-zA-Zа-яА-ЯёЁ0-9])(?=.*\d)[a-zA-Zа-яА-ЯёЁ0-9.,]*$', pat_address):
+                st.warning("Поле адреса может содержать только цифры (хотя бы 1), буквы русского или английского алфавита (хотя бы 1), символы ',' и '.'.")
+            else:
+                try:
+                    with st.session_state.engine.connect() as connection:
+                        sql_call_procedure = ''' CALL add_patient(:snils, :surname, :name, :patronymic, :birthdate, :address);'''
+                        connection.execute(text(sql_call_procedure), {
+                            "snils": pat_snils,
+                            "surname": pat_surname,
+                            "name": pat_name,
+                            "patronymic": pat_patronymic,
+                            "birthdate": pat_birth,
+                            "address": pat_address
+                        })
+                        connection.commit()
+                    st.success(f"Пациент {pat_surname} {pat_name} {pat_patronymic} добавлен!")
+                
+                except SQLAlchemyError as error:
+                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                    elif "повторяющееся значение ключа нарушает ограничение уникальности" in str(error):
+                        st.warning("Пациент с таким СНИЛС уже существует")
+                    else:
+                        st.error("Ошибка при добавлении пациента: " + str(error))
     
     elif tab == "Изменение данных у пациента":
         st.subheader("Изменение данных у пациента")
@@ -405,43 +444,65 @@ def registrar_tab():
             pat_surname = st.text_input("Введите фамилию пациента")
             pat_patronymic = st.text_input("Введите отчество пациента")
             if st.button("Внести изменения"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' CALL update_patient_med(:par_snils, :pat_surname, :par_name, :par_patro);'''
-                        connection.execute(text(sql_call_procedure), {
-                            "par_snils": pat_snils,
-                            "pat_surname": pat_surname,
-                            "par_name": pat_name,
-                            "par_patro": pat_patronymic
-                        })
-                        connection.commit()
-                    st.success("Изменения внесены в базу!")
-                
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при изменении ФИО: " + str(error))
+                if not pat_snils or not pat_name or not pat_surname or not pat_patronymic:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', pat_snils):
+                    st.warning("Неверный формат СНИЛС")
+                elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_patronymic):
+                    st.warning("Поля ФИО пациента должны содержать только буквы русского или английского алфавита")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' CALL update_patient_med(:par_snils, :pat_surname, :par_name, :par_patro);'''
+                            connection.execute(text(sql_call_procedure), {
+                                "par_snils": pat_snils,
+                                "pat_surname": pat_surname,
+                                "par_name": pat_name,
+                                "par_patro": pat_patronymic
+                            })
+                            connection.commit()
+                        st.success("Изменения внесены в базу!")
+                    
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                        elif "повторяющееся значение ключа нарушает ограничение уникальности" in str(error):
+                            st.warning("Пациент с таким СНИЛС уже существует")
+                        elif "Пациент не найден" in str(error):
+                            st.warning("Пациент не найден")
+                        else:
+                            st.error("Ошибка при изменении ФИО: " + str(error))
         
         elif action == "Изменить адрес":
             pat_snils = st.text_input("Введите СНИЛС пациента (123-456-789 01)")
             pat_address = st.text_input("Введите адрес пациента")
             if st.button("Внести изменения"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' CALL update_patient_med_address(:par_snils, :pat_addr);'''
-                        connection.execute(text(sql_call_procedure), {
-                            "par_snils": pat_snils,
-                            "pat_addr": pat_address
-                        })
-                        connection.commit()
-                    st.success("Изменения внесены в базу!")
-                
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при изменении адреса: " + str(error))
+                if not pat_snils or not pat_address:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', pat_snils):
+                    st.warning("Неверный формат СНИЛС")
+                elif not re.match(r'^(?=.*[a-zA-Zа-яА-ЯёЁ0-9])(?=.*\d)[a-zA-Zа-яА-ЯёЁ0-9.,]*$', pat_address):
+                    st.warning("Поле адреса может содержать только цифры (хотя бы 1), буквы русского или английского алфавита (хотя бы 1), символы ',' и '.'.")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' CALL update_patient_med_address(:par_snils, :pat_addr);'''
+                            connection.execute(text(sql_call_procedure), {
+                                "par_snils": pat_snils,
+                                "pat_addr": pat_address
+                            })
+                            connection.commit()
+                        st.success("Изменения внесены в базу!")
+                    
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                        elif "повторяющееся значение ключа нарушает ограничение уникальности" in str(error):
+                            st.warning("Пациент с таким СНИЛС уже существует")
+                        elif "Пациент не найден" in str(error):
+                            st.warning("Пациент не найден")
+                        else:
+                            st.error("Ошибка при изменении адреса: " + str(error))
     
     elif tab == "Поиск пациента":
         st.subheader("Поиск пациента")
@@ -449,23 +510,28 @@ def registrar_tab():
         if action == "Поиск по СНИЛС":
             snils_search = st.text_input("Введите СНИЛС пациента")
             if st.button("Поиск"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' SELECT * FROM get_patient(:snils_pat);'''
-                        result = connection.execute(text(sql_call_procedure), {
-                            "snils_pat": snils_search
-                        })
-                        patient_table = pd.DataFrame(result.fetchall(), columns=result.keys())
-                        if not patient_table.empty:
-                            st.dataframe(patient_table)
+                if not snils_search:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', snils_search):
+                    st.warning("Неверный формат СНИЛС")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' SELECT * FROM get_patient(:snils_pat);'''
+                            result = connection.execute(text(sql_call_procedure), {
+                                "snils_pat": snils_search
+                            })
+                            patient_table = pd.DataFrame(result.fetchall(), columns=result.keys())
+                            if not patient_table.empty:
+                                st.dataframe(patient_table)
+                            else:
+                                st.write(f"Пациент со снилсом {snils_search} не найдены.")
+                            connection.commit()
+                    except SQLAlchemyError as error:
+                        if "Функция с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                         else:
-                            st.write(f"Пациент со снилсом {snils_search} не найдены.")
-                        connection.commit()
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при получении списка пациентов: " + str(error))
+                            st.error("Ошибка при получении списка пациентов: " + str(error))
         
         elif action == "Поиск по ФИО и дате рождения":
             pat_surname = st.text_input("Введите фамилию пациента")
@@ -473,71 +539,95 @@ def registrar_tab():
             pat_patronymic = st.text_input("Введите отчество пациента")
             pat_birth = st.date_input("Введите дату рождения пациента")
             if st.button("Поиск"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' SELECT * FROM get_patient(:surname, :name, :patronymic, :birth);'''
-                        result = connection.execute(text(sql_call_procedure), {
-                            "surname": pat_surname,
-                            "name": pat_name,
-                            "patronymic": pat_patronymic,
-                            "birth": pat_birth
-                        })
-                        patient_table = pd.DataFrame(result.fetchall(), columns=result.keys())
-                        if not patient_table.empty:
-                            st.dataframe(patient_table)
+                if not pat_name or not pat_surname or not pat_patronymic or not pat_birth:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_patronymic):
+                    st.warning("Поля ФИО пациента должны содержать только буквы русского или английского алфавита")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' SELECT * FROM get_patient(:surname, :name, :patronymic, :birth);'''
+                            result = connection.execute(text(sql_call_procedure), {
+                                "surname": pat_surname,
+                                "name": pat_name,
+                                "patronymic": pat_patronymic,
+                                "birth": pat_birth
+                            })
+                            patient_table = pd.DataFrame(result.fetchall(), columns=result.keys())
+                            if not patient_table.empty:
+                                st.dataframe(patient_table)
+                            else:
+                                st.write(f"Пациент с этими данными не найден.")
+                            connection.commit()
+                    except SQLAlchemyError as error:
+                        if "Функция с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                         else:
-                            st.write(f"Пациент с этими данными не найден.")
-                        connection.commit()
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при получении списка врачей: " + str(error))
+                            st.error("Ошибка при получении списка врачей: " + str(error))
     
     elif tab == "Добавление записи":
         st.subheader("Добавление записи")
-        doctor_id = st.text_input("Введите ID врача")
+        doctor_id = st.number_input("Введите ID врача", min_value=1)
         patient_snils = st.text_input("Введите СНИЛС пациента")
-        appointment_datetime = st.text_input("Введите дату и время записи (YYYY-MM-DD HH:MM:SS)")
+        appointment_datetime = st.text_input("Введите дату и время записи (гггг-мм-дд чч:мм:сс)")
+        
         if st.button("Добавить запись"):
-            try:
-                with st.session_state.engine.connect() as connection:
-                    sql_call_procedure = ''' CALL add_appointment(:doc_id, :pat_snils, :appointment_date);'''
-                    connection.execute(text(sql_call_procedure), {
-                        "doc_id": doctor_id,
-                        "pat_snils": patient_snils,
-                        "appointment_date": appointment_datetime
-                    })
-                    connection.commit()
-                st.success(f"Пациент записан на {appointment_datetime}!")
-            except SQLAlchemyError as error:
-                if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                    st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                else:
-                    st.error("Ошибка при добавлении пациента: " + str(error))
+            if not doctor_id or not patient_snils or not appointment_datetime:
+                st.warning("Заполните все поля!")
+            elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', patient_snils):
+                st.warning("Неверный формат СНИЛС")
+            elif not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', appointment_datetime):
+                st.warning("Неверный формат даты и времени записи")
+            else:
+                try:
+                    with st.session_state.engine.connect() as connection:
+                        sql_call_procedure = ''' CALL add_appointment(:doc_id, :pat_snils, :appointment_date);'''
+                        connection.execute(text(sql_call_procedure), {
+                            "doc_id": doctor_id,
+                            "pat_snils": patient_snils,
+                            "appointment_date": appointment_datetime
+                        })
+                        connection.commit()
+                    st.success(f"Пациент записан на {appointment_datetime}!")
+                except SQLAlchemyError as error:
+                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                    elif 'нарушает ограничение внешнего ключа "appointment_id_doctor_fkey"' in str(error):
+                        st.warning("Такого врача в базе нет!")
+                    elif 'нарушает ограничение внешнего ключа "appointment_snils_patient_fkey"' in str(error):
+                        st.warning("Такого пациента в базе нет!")
+                    else:
+                        st.error("Ошибка при добавлении пациента: " + str(error))
     
     elif tab == "Изменение записи":
-        appointment_id = st.text_input("Введите ID записи")
-        appointment_datetime = st.text_input("Введите дату и время записи (YYYY-MM-DD HH:MM:SS)")
+        appointment_id = st.number_input("Введите ID записи", min_value=1)
+        appointment_datetime = st.text_input("Введите дату и время записи (гггг-мм-дд чч:мм:сс)")
         if st.button("Изменить"):
-            try:
-                with st.session_state.engine.connect() as connection:
-                    sql_call_procedure = ''' CALL update_appointment_date(:appoint_id, :appoint_date);'''
-                    connection.execute(text(sql_call_procedure), {
-                        "appoint_id": appointment_id,
-                        "appoint_date": appointment_datetime
-                    })
-                    connection.commit()
-                st.success(f"запись перенесена на {appointment_datetime}!")
-            
-            except SQLAlchemyError as error:
-                if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                    st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                else:
-                    st.error("Ошибка при изменении даты записи: " + str(error))
+            if not appointment_datetime:
+                st.warning("Заполните все поля")
+            elif not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', appointment_datetime):
+                st.warning("Неверный формат даты и времени записи")
+            else:
+                try:
+                    with st.session_state.engine.connect() as connection:
+                        sql_call_procedure = ''' CALL update_appointment_date(:appoint_id, :appoint_date);'''
+                        connection.execute(text(sql_call_procedure), {
+                            "appoint_id": appointment_id,
+                            "appoint_date": appointment_datetime
+                        })
+                        connection.commit()
+                    st.success(f"Запись перенесена на {appointment_datetime}!")
+                
+                except SQLAlchemyError as error:
+                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                    elif "Запись не найдена" in str(error):
+                        st.warning("Запись не найдена")
+                    else:
+                        st.error("Ошибка при изменении даты записи: " + str(error))
     
     elif tab == "Удаление записи":
-        appointment_id = st.text_input("Введите ID записи")
+        appointment_id = st.number_input("Введите ID записи", min_value=1)
         if st.button("Удалить"):
             try:
                 with st.session_state.engine.connect() as connection:
@@ -575,7 +665,7 @@ def doc_tab():
             st.session_state.engine = None
     
     specialties = ['Терапевт', 'Гастроэнтеролог', 'Офтальмолог', 'Окулист', 'Невролог', 'Отоларинголог', 'Хирург', 'Психиатр']
-    tab = st.sidebar.radio("Выберите действие", ["Просмотр графика записей", "Изменение записи", "Больничный лист", "Добавить запись", "Поиск пациента"])
+    tab = st.sidebar.radio("Выберите действие", ["Просмотр графика записей", "Посмотреть врачей в поликлинике", "Добавить запись", "Изменить записи", "Больничный лист", "Поиск пациента"])
 
     if tab == "Просмотр графика записей":
         st.subheader("Просмотр графика записей")
@@ -602,26 +692,32 @@ def doc_tab():
             doctor_name = st.text_input("Введите имя врача")
             doctor_surname = st.text_input("Введите фамилию врача")
             doctor_patronymic = st.text_input("Введите отчество врача")
+            
             if st.button("Поиск"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' SELECT * FROM get_schedule(:surname, :name, :patronymic);'''
-                        result = connection.execute(text(sql_call_procedure), {
-                            "surname": doctor_surname,
-                            "name": doctor_name,
-                            "patronymic": doctor_patronymic,
-                        })
-                        appointment_table = pd.DataFrame(result.fetchall(), columns=result.keys())
-                        if not appointment_table.empty:
-                            st.dataframe(appointment_table)
+                if not doctor_name or not doctor_surname or not doctor_patronymic:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', doctor_patronymic):
+                    st.warning("Поля должны содержать только буквы русского или английского алфавита")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' SELECT * FROM get_schedule(:surname, :name, :patronymic);'''
+                            result = connection.execute(text(sql_call_procedure), {
+                                "surname": doctor_surname,
+                                "name": doctor_name,
+                                "patronymic": doctor_patronymic,
+                            })
+                            appointment_table = pd.DataFrame(result.fetchall(), columns=result.keys())
+                            if not appointment_table.empty:
+                                st.dataframe(appointment_table)
+                            else:
+                                st.write("Записей нет.")
+                            connection.commit()
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                         else:
-                            st.write("Записей нет.")
-                        connection.commit()
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при получении графика записей: " + str(error))
+                            st.error("Ошибка при получении графика записей: " + str(error))
         
         elif action == "Расписание по специальности":
             doctor_specialty = st.selectbox("Выберите специальность врача", specialties)
@@ -644,12 +740,30 @@ def doc_tab():
                     else:
                         st.error("Ошибка при получении графика записей: " + str(error))
 
-    elif tab == "Изменение записи":
+    elif tab == "Посмотреть врачей в поликлинике":
+        st.subheader("Список врачей")
+        if st.button("Отобразить"):
+            try:
+                with st.session_state.engine.connect() as connection:
+                    result = connection.execute(text("SELECT * FROM get_doctor();"))
+                    doctor_table = pd.DataFrame(result.fetchall(), columns=result.keys())
+                    if not doctor_table.empty:
+                        st.dataframe(doctor_table)
+                    else:
+                        st.write("Врачи не найдены.")
+                    connection.commit()
+            except SQLAlchemyError as error:
+                if "Функция с данными именем и типами аргументов не найдена" in str(error):
+                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                else:
+                    st.error("Ошибка при получении списка врачей: " + str(error))
+    
+    elif tab == "Изменить записи":
         st.subheader("Изменение записи")
         action = st.selectbox("Выберите действие", ["Удаление записи", "Добавление/изменение кода МКБ", "Изменение даты записи"])
         
         if action == "Удаление записи":
-            appointment_id = st.text_input("Введите ID записи")
+            appointment_id = st.number_input("Введите ID записи", min_value=1)
             if st.button("Удалить"):
                 try:
                     with st.session_state.engine.connect() as connection:
@@ -668,44 +782,58 @@ def doc_tab():
                         st.error("Ошибка при удалении записи: " + str(error))
         
         elif action == "Добавление/изменение кода МКБ":
-            appointment_id = st.text_input("Введите ID записи")
+            appointment_id = st.number_input("Введите ID записи", min_value=1)
             mkb_code = st.text_input("Введите код МКБ (например, A01.1)")
             if st.button("Изменить/Добавить"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' CALL update_appointment_icd(:appoint_id, :new_icd);'''
-                        connection.execute(text(sql_call_procedure), {
-                            "appoint_id": appointment_id,
-                            "new_icd": mkb_code
-                        })
-                        connection.commit()
-                    st.success(f"Добавлен код МКБ {mkb_code}!")
-                
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при изменении/добавлении кода МКБ: " + str(error))
+                if not mkb_code:
+                    st.warning('Заполните все поля!')
+                elif not re.match(r'^[a-zA-Z]\d{2}\.\d$', mkb_code):
+                    st.warning('Недопустимый формат МКб!')
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' CALL update_appointment_icd(:appoint_id, :new_icd);'''
+                            connection.execute(text(sql_call_procedure), {
+                                "appoint_id": appointment_id,
+                                "new_icd": mkb_code
+                            })
+                            connection.commit()
+                        st.success(f"Добавлен код МКБ {mkb_code}!")
+                    
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                        elif "Запись не найдена" in str(error):
+                            st.warning("Запись не найдена")
+                        else:
+                            st.error("Ошибка при изменении/добавлении кода МКБ: " + str(error))
         
         elif action == "Изменение даты записи":
-            appointment_id = st.text_input("Введите ID записи")
-            appointment_datetime = st.text_input("Введите дату и время записи (YYYY-MM-DD HH:MM:SS)")
+            appointment_id = st.number_input("Введите ID записи", min_value=1)
+            appointment_datetime = st.text_input("Введите дату и время записи (гггг-мм-дд чч:мм:сс)")
             if st.button("Изменить"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' CALL update_appointment_date(:appoint_id, :appoint_date);'''
-                        connection.execute(text(sql_call_procedure), {
-                            "appoint_id": appointment_id,
-                            "appoint_date": appointment_datetime
-                        })
-                        connection.commit()
-                    st.success(f"Запись перенесена на {appointment_datetime}!")
-                
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при изменении даты записи: " + str(error))
+                if not appointment_datetime:
+                    st.warning("Заполните все поля")
+                elif not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', appointment_datetime):
+                    st.warning("Неверный формат даты и времени записи")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' CALL update_appointment_date(:appoint_id, :appoint_date);'''
+                            connection.execute(text(sql_call_procedure), {
+                                "appoint_id": appointment_id,
+                                "appoint_date": appointment_datetime
+                            })
+                            connection.commit()
+                        st.success(f"Запись перенесена на {appointment_datetime}!")
+                    
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                        elif "Запись не найдена" in str(error):
+                            st.warning("Запись не найдена")
+                        else:
+                            st.error("Ошибка при изменении даты записи: " + str(error))
 
     elif tab == "Больничный лист":
         st.subheader("Больничный лист")
@@ -714,131 +842,177 @@ def doc_tab():
         if action == "Поиск больничного листа":
             snils_search = st.text_input("Введите СНИЛС пациента")
             if st.button("Поиск"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' SELECT * FROM get_sickleave(:snils_pat);'''
-                        result = connection.execute(text(sql_call_procedure), {
-                            "snils_pat": snils_search
-                        })
-                        sickleave_table = pd.DataFrame(result.fetchall(), columns=result.keys())
-                        if not sickleave_table.empty:
-                            st.dataframe(sickleave_table)
+                if not snils_search:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', snils_search):
+                    st.warning("Неверный формат СНИЛС")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' SELECT * FROM get_sickleave(:snils_pat);'''
+                            result = connection.execute(text(sql_call_procedure), {
+                                "snils_pat": snils_search
+                            })
+                            sickleave_table = pd.DataFrame(result.fetchall(), columns=result.keys())
+                            if not sickleave_table.empty:
+                                st.dataframe(sickleave_table)
+                            else:
+                                st.write(f"Больничный лист у пациента со снилсом {snils_search} не найден.")
+                            connection.commit()
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                         else:
-                            st.write(f"Больничный лист у пациента со снилсом {snils_search} не найден.")
-                        connection.commit()
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при получении больничного листа: " + str(error))
+                            st.error("Ошибка при получении больничного листа: " + str(error))
 
         elif action == "Добавление больничного листа":
             snils_add = st.text_input("Введите СНИЛС пациента")
             start_date = st.date_input("Дата начала больничного")
             end_date = st.date_input("Дата окончания больничного")
             if st.button("Добавить больничный лист"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' CALL add_sickleave(:snils_id, :st_date, :end_date);'''
-                        connection.execute(text(sql_call_procedure), {
-                            "snils_id": snils_add,
-                            "st_date": start_date,
-                            "end_date": end_date
-                        })
-                        connection.commit()
-                    st.success(f"Больничный лист с {start_date} по {end_date} добавлен!")
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при добавлении больничного листа: " + str(error))
+                if not snils_add:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', snils_add):
+                    st.warning("Неверный формат СНИЛС")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' CALL add_sickleave(:snils_id, :st_date, :end_date);'''
+                            connection.execute(text(sql_call_procedure), {
+                                "snils_id": snils_add,
+                                "st_date": start_date,
+                                "end_date": end_date
+                            })
+                            connection.commit()
+                        st.success(f"Больничный лист с {start_date} по {end_date} добавлен!")
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                        elif "Больничный лист не найден" in str(error):
+                            st.warning(f"Больничный лист не найден!")
+                        elif 'нарушает ограничение-проверку "begin_end_time_check"' in str(error):
+                            st.warning("Дата начала больничного листа должна быть меньше даты его окончания.")
+                        elif 'нарушает ограничение внешнего ключа "sickleave_snils_fkey"' in str(error):
+                            st.warning("Такого пациента нет в базе.")
+                        elif 'повторяющееся значение ключа нарушает ограничение уникальности "sickleave_snils_key"':
+                            st.warning("У пациента уже есть больничный лист")
+                        else:
+                            st.error("Ошибка при добавлении больничного листа: " + str(error))
 
         elif action == "Продление больничного листа":
             snils_extend = st.text_input("Введите СНИЛС пациента")
             new_end_date = st.date_input("Новая дата окончания больничного")
             if st.button("Продлить больничный лист"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' CALL update_sickleave_end_date(:snils_ser, :new_date);'''
-                        connection.execute(text(sql_call_procedure), {
-                            "snils_ser": snils_extend,
-                            "new_date": new_end_date
-                        })
-                        connection.commit()
-                    st.success(f"Больничный лист для пациента с СНИЛС {snils_extend} продлен до {new_end_date}.")
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    elif "не существует в базе" in str(error):
-                        st.warning(f"Больничный лист не найден!")
-                    else:
-                        st.error("Ошибка при продлении больничного листа: " + str(error))                    
+                if not snils_extend:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', snils_extend):
+                    st.warning("Неверный формат СНИЛС")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' CALL update_sickleave_end_date(:snils_ser, :new_date);'''
+                            connection.execute(text(sql_call_procedure), {
+                                "snils_ser": snils_extend,
+                                "new_date": new_end_date
+                            })
+                            connection.commit()
+                        st.success(f"Больничный лист для пациента с СНИЛС {snils_extend} продлен до {new_end_date}.")
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                        elif "Больничный лист не найден" in str(error):
+                            st.warning(f"Больничный лист не найден!")
+                        elif 'нарушает ограничение-проверку "begin_end_time_check"':
+                            st.warning("Дата начала больничного листа должна быть меньше даты его окончания.")
+                        else:
+                            st.error("Ошибка при продлении больничного листа: " + str(error))                    
 
         elif action == "Удаление больничного листа":
             snils_delete = st.text_input("Введите СНИЛС пациента")
             if st.button("Удалить больничный лист"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' CALL delete_sickleave(:snils_id);'''
-                        connection.execute(text(sql_call_procedure), {
-                            "snils_id": snils_delete,
-                        })
-                        connection.commit()
-                    st.success(f"Больничный лист удален!")
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    elif "не существует в базе" in str(error):
-                        st.warning(f"Больничный лист не найден!")
-                    else:
-                        st.error("Ошибка при удалении больничного листа: " + str(error))
+                if not snils_delete:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', snils_delete):
+                    st.warning("Неверный формат СНИЛС")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' CALL delete_sickleave(:snils_id);'''
+                            connection.execute(text(sql_call_procedure), {
+                                "snils_id": snils_delete,
+                            })
+                            connection.commit()
+                        st.success(f"Больничный лист удален!")
+                    except SQLAlchemyError as error:
+                        if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                        elif "Больничный лист не найден" in str(error):
+                            st.warning(f"Больничный лист не найден!")
+                        else:
+                            st.error("Ошибка при удалении больничного листа: " + str(error))
 
     elif tab == "Добавить запись":
         st.subheader("Добавить запись")
-        doctor_id = st.text_input("Введите ID врача")
+        doctor_id = st.number_input("Введите ID врача", min_value=1)
         patient_snils = st.text_input("Введите СНИЛС пациента")
-        appointment_datetime = st.text_input("Введите дату и время записи (YYYY-MM-DD HH:MM:SS)")
+        appointment_datetime = st.text_input("Введите дату и время записи (гггг-мм-дд чч:мм:сс)")
+        
         if st.button("Добавить запись"):
-            try:
-                with st.session_state.engine.connect() as connection:
-                    sql_call_procedure = ''' CALL add_appointment(:doc_id, :pat_snils, :appointment_date);'''
-                    connection.execute(text(sql_call_procedure), {
-                        "doc_id": doctor_id,
-                        "pat_snils": patient_snils,
-                        "appointment_date": appointment_datetime
-                    })
-                    connection.commit()
-                st.success(f"Пациент записан на {appointment_datetime}!")
-            except SQLAlchemyError as error:
-                if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                    st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                else:
-                    st.error("Ошибка при добавлении пациента: " + str(error))
+            if not doctor_id or not patient_snils or not appointment_datetime:
+                st.warning("Заполните все поля!")
+            elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', patient_snils):
+                st.warning("Неверный формат СНИЛС")
+            elif not re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', appointment_datetime):
+                st.warning("Неверный формат даты и времени записи")
+            else:
+                try:
+                    with st.session_state.engine.connect() as connection:
+                        sql_call_procedure = ''' CALL add_appointment(:doc_id, :pat_snils, :appointment_date);'''
+                        connection.execute(text(sql_call_procedure), {
+                            "doc_id": doctor_id,
+                            "pat_snils": patient_snils,
+                            "appointment_date": appointment_datetime
+                        })
+                        connection.commit()
+                    st.success(f"Пациент записан на {appointment_datetime}!")
+                except SQLAlchemyError as error:
+                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
+                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
+                    elif 'нарушает ограничение внешнего ключа "appointment_id_doctor_fkey"' in str(error):
+                        st.warning("Такого врача в базе нет!")
+                    elif 'нарушает ограничение внешнего ключа "appointment_snils_patient_fkey"' in str(error):
+                        st.warning("Такого пациента в базе нет!")
+                    else:
+                        st.error("Ошибка при добавлении пациента: " + str(error))
         
     elif tab == "Поиск пациента":
         st.subheader("Поиск пациента")
         action = st.selectbox("Выберите способ поиска", ["Поиск по СНИЛС", "Поиск по ФИО и дате рождения"])
-        
         if action == "Поиск по СНИЛС":
             snils_search = st.text_input("Введите СНИЛС пациента")
             if st.button("Поиск"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' SELECT * FROM get_patient(:snils_pat);'''
-                        result = connection.execute(text(sql_call_procedure), {
-                            "snils_pat": snils_search
-                        })
-                        patient_table = pd.DataFrame(result.fetchall(), columns=result.keys())
-                        if not patient_table.empty:
-                            st.dataframe(patient_table)
+                if not snils_search:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^\d{3}-\d{3}-\d{3} \d{2}$', snils_search):
+                    st.warning("Неверный формат СНИЛС")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' SELECT * FROM get_patient(:snils_pat);'''
+                            result = connection.execute(text(sql_call_procedure), {
+                                "snils_pat": snils_search
+                            })
+                            patient_table = pd.DataFrame(result.fetchall(), columns=result.keys())
+                            if not patient_table.empty:
+                                st.dataframe(patient_table)
+                            else:
+                                st.write(f"Пациент со снилсом {snils_search} не найдены.")
+                            connection.commit()
+                    except SQLAlchemyError as error:
+                        if "Функция с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                         else:
-                            st.write(f"Пациент со снилсом {snils_search} не найдены.")
-                        connection.commit()
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при получении списка пациентов: " + str(error))
+                            st.error("Ошибка при получении списка пациентов: " + str(error))
         
         elif action == "Поиск по ФИО и дате рождения":
             pat_surname = st.text_input("Введите фамилию пациента")
@@ -846,26 +1020,31 @@ def doc_tab():
             pat_patronymic = st.text_input("Введите отчество пациента")
             pat_birth = st.date_input("Введите дату рождения пациента")
             if st.button("Поиск"):
-                try:
-                    with st.session_state.engine.connect() as connection:
-                        sql_call_procedure = ''' SELECT * FROM get_patient(:surname, :name, :patronymic, :birth);'''
-                        result = connection.execute(text(sql_call_procedure), {
-                            "surname": pat_surname,
-                            "name": pat_name,
-                            "patronymic": pat_patronymic,
-                            "birth": pat_birth
-                        })
-                        patient_table = pd.DataFrame(result.fetchall(), columns=result.keys())
-                        if not patient_table.empty:
-                            st.dataframe(patient_table)
+                if not pat_name or not pat_surname or not pat_patronymic or not pat_birth:
+                    st.warning("Заполните все поля!")
+                elif not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_name) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_surname) or not re.match(r'^[а-яА-ЯёЁa-zA-Z\s-]+$', pat_patronymic):
+                    st.warning("Поля ФИО пациента должны содержать только буквы русского или английского алфавита")
+                else:
+                    try:
+                        with st.session_state.engine.connect() as connection:
+                            sql_call_procedure = ''' SELECT * FROM get_patient(:surname, :name, :patronymic, :birth);'''
+                            result = connection.execute(text(sql_call_procedure), {
+                                "surname": pat_surname,
+                                "name": pat_name,
+                                "patronymic": pat_patronymic,
+                                "birth": pat_birth
+                            })
+                            patient_table = pd.DataFrame(result.fetchall(), columns=result.keys())
+                            if not patient_table.empty:
+                                st.dataframe(patient_table)
+                            else:
+                                st.write(f"Пациент с этими данными не найден.")
+                            connection.commit()
+                    except SQLAlchemyError as error:
+                        if "Функция с данными именем и типами аргументов не найдена" in str(error):
+                            st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
                         else:
-                            st.write(f"Пациент с этими данными не найден.")
-                        connection.commit()
-                except SQLAlchemyError as error:
-                    if "Процедура с данными именем и типами аргументов не найдена" in str(error):
-                        st.warning("База данных была ранее удалена. Для повторной инициализации - запустите приложение заново")
-                    else:
-                        st.error("Ошибка при получении списка врачей: " + str(error))
+                            st.error("Ошибка при получении списка врачей: " + str(error))
     
     if st.sidebar.button("Выйти"):
         st.session_state.logged_in = False
@@ -889,9 +1068,10 @@ def main():
             with st.session_state.engine.connect() as connection:
                 
                 db_name = "clinic"
-                result = connection.execute(text("SELECT 1 FROM pg_database WHERE datname = :db_name"), {"db_name": db_name})
-                
-                if result.fetchone() is None: # Если база данных не существует, создаем ее
+                                
+                result = connection.execute(text("SELECT check_database_exists(:db_name)"), {"db_name": db_name}).fetchone()
+
+                if result[0] == 'NO':  # Если база данных не существует
                     connection.execute(text("CALL please_create_db('clinic')"))
                     connection.commit()
                     connection.execute(text("CALL install_dblink_in_db('clinic')"))
@@ -901,7 +1081,7 @@ def main():
                     print("База данных создана успешно")
                 else:
                     print("База данных уже существует")
-
+        
         except SQLAlchemyError as error:
             st.error(f"Ошибка при работе с PostgreSQL: {error}")
 
