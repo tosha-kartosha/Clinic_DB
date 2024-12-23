@@ -2,6 +2,23 @@ CREATE USER initializator WITH SUPERUSER PASSWORD 'init'; -- системный 
 CREATE USER adminchik WITH PASSWORD '12345'; -- администратор
 CREATE USER staff with password '123'; -- врач или регистратура
 
+CREATE OR REPLACE FUNCTION check_database_exists(db_name TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    db_exists BOOLEAN;
+BEGIN
+    SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = db_name) INTO db_exists;
+
+    IF db_exists THEN
+        RETURN 'YES';
+    ELSE
+        RETURN 'NO';
+    END IF;
+END;
+$$;
+
 CREATE OR REPLACE PROCEDURE please_create_db(dbname text) -- function to create bd
 AS $$
 BEGIN
