@@ -29,4 +29,5 @@
 * Добавлять / удалять / продлять / искать больничный лист у конкретного пациента
 
 ## ER
-![clinic_er](https://github.com/user-attachments/assets/b4d4670f-492c-4e07-8046-beaa6a04c295)
+![clinic_er](https://github.com/user-attachments/assets/0eb4d9a1-1ad8-46c1-a7d6-e9a1f339a2e8)
+
