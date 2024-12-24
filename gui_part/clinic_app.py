@@ -596,6 +596,10 @@ def registrar_tab():
                         st.warning("Такого врача в базе нет!")
                     elif 'нарушает ограничение внешнего ключа "appointment_snils_patient_fkey"' in str(error):
                         st.warning("Такого пациента в базе нет!")
+                    elif 'appointment_snils_patient_record_date_key' in str(error):
+                        st.warning("У пациента уже есть запись на это время!")
+                    elif 'appointment_id_doctor_record_date_key':
+                        st.warning("У врача на это время уже есть запись")
                     else:
                         st.error("Ошибка при добавлении пациента: " + str(error))
     
@@ -982,6 +986,10 @@ def doc_tab():
                         st.warning("Такого врача в базе нет!")
                     elif 'нарушает ограничение внешнего ключа "appointment_snils_patient_fkey"' in str(error):
                         st.warning("Такого пациента в базе нет!")
+                    elif 'appointment_snils_patient_record_date_key' in str(error):
+                        st.warning("У пациента уже есть запись на это время!")
+                    elif 'appointment_id_doctor_record_date_key':
+                        st.warning("У врача на это время уже есть запись")
                     else:
                         st.error("Ошибка при добавлении пациента: " + str(error))
         
